@@ -1,6 +1,6 @@
 # SPBU-Bot
 This is a repository of Saint Petersburg State University Telegram Bor for applicants. 
-####Now it has following functionality:
+#### Now it has following functionality:
 1. A functions button. By clicking it, you will see all Bot's realized functions.
 2. A navigate button. There are 3 types of navigation: by edu's name, by edu's code and by block of edus. 
 - If you choose the first type, you will have to write a name of edu you want to know about, than, if this name is found, you will get all information about it. 
