@@ -8,6 +8,7 @@ from aiogram.utils import executor
 from bs4 import BeautifulSoup
 import getpass
 import pymysql
+import psycopg2
 from mysql.connector import MySQLConnection, Error
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
@@ -431,39 +432,64 @@ dp.register_message_handler(functions)
 dp.register_message_handler(Test)
 
 
-def FillingBase():
-    #parser of SPBU edus
-    with connection.cursor() as cursor:
-        table = soup.find('div', class_ = "table-programs-wrapper g-container")
-        programms = table.find_all('a', class_="table__row")
-        for programm in programms:
-            name = programm.find('div', class_='table__cell').get_text().replace('\xa0',' ')
-            level = programm.find('div', class_='table__cell table__cell--inline').get_text()
-            code = programm.find_all('div', class_='table__cell table__cell--inline')[-1].get_text()
-            link = Domen + programm.get("href")
-            r_ = requests.get(link)
-            soup1 = BeautifulSoup(r_.text, 'html.parser')
-            headline = soup1.find('div', class_="program-headline")
+def parser():
+    cur = connection.cursor()
+    Blocks = {"Физико-математические, компьютерные и информационные науки": 0,
+              "Естественные науки": 1,
+              "Науки об обществе": 2,
+              "Гуманитарные науки": 3,
+              "Искусство и культура": 4,
+              "Физическая культура": 5
+              }
+    Levels = {"Бакалавриат": 1, "Cпециалитет": 2}
+    Durations = {"4": 1, "5": 2, "6": 3}
+    table = soup.find('div', class_="table-programs-wrapper g-container")
+    counter = 0
+    for i in range(6):
+        table_block = table.find('div', id='programs-section-'+str(i))
+        block = (table_block.find('div', class_ = 'table-programs__title table-programs__title--'+str(i+1))).get_text().replace('\n', '').strip()
+        programs = table_block.find_all('a', class_="table__row")
+        for program in programs:
+            counter += 1
+            name = program.find('div', class_='table__cell').get_text().replace('\xa0', ' ')
+            level = program.find('div', class_='table__cell table__cell--inline').get_text()
+            code = program.find_all('div', class_='table__cell table__cell--inline')[-1].get_text()
+            link = Domen + program.get("href")
+            program_request = requests.get(link)
+            program_soup = bs4.BeautifulSoup(program_request.text, 'html.parser')
+            headline = program_soup.find('div', class_="program-headline")
             duration = headline.find_all('p', class_="program-headline__info")[-1].get_text()
             duration = ''.join(i for i in duration if i.isdigit())
-            container = soup1.find('div', class_='g-row')
-            numberofplaces = container.find('table',class_='program-stats__table program-stats__table--small').get_text().replace(
+            container = program_soup.find('div', class_='g-row')
+            numberofplaces = container.find('table',
+                                            class_='program-stats__table program-stats__table--small').get_text().replace(
                 '\n', '')[:3]
             numberofplaces = ''.join(i for i in numberofplaces if i.isdigit())
-            cost = container.find_all('table', class_='program-stats__table program-stats__table--small')[
-                       -1].get_text()[:10]
-            cost = ''.join(i for i in cost if i.isdigit())
-            description = container.find('div', class_='editor editor--sans').get_text()
-            cursor.execute('INSERT INTO edus (Name,Level,Code,Link,Duration, NumbOfPlaces,Cost,Description) VALUES '
-            '("%s","%s","%s","%s","%s","%s","%s","%s")', (name, level,
-                                                          code, link,
-                                                          int(duration), int(numberofplaces),
-                                                          int(cost), description))
+            program_description = program_soup.find('div', class_ = 'collapse-items col-xs-12 col-md-8')
+            description = ''
+            items = program_description.find_all('div', class_='collapse')
+            for item in items:
+                if "Описание программы" in str(items):
+                    if "Описание программы" in item.get_text():
 
-            print(1)
-    connection.commit()
+                        description = ''
+                        description += item.get_text().replace("Описание программы", '').replace('\n','. ').strip('. ')
+                else:
+                    if "Преимущества обучения" in item.get_text():
+                        description = ''
+                        description += item.get_text().replace("Преимущества обучения", '').replace('\n', '. ').strip('. ')
+            cur.execute("insert into EDUs (edu_id, block_id, edu_name, code, level_id, duration_id, number_of_places, "
+                        "description, link) values (%(count)s, %(block)s, %(name)s, %(code)s, %(level)s, "
+                        "%(duration)s, %(num)s, %(description)s, %(link)s)", {"count": counter,
+                                                                              "block": Blocks[block], "name": name,
+                                                                              "code": code, "level": Levels[level],
+                                                                              "duration": Durations[duration],
+                                                                              "num": numberofplaces,
+                                                                              "description": description, "link": link})
+            connection.commit()
+            print(f"{name} successfully added.")
 
-#FillingBase()
+#parser()
 if __name__ == '__main__':
     executor.start_polling(dp)
 
