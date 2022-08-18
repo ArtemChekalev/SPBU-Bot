@@ -1,3 +1,4 @@
+import bs4
 import mysql.connector
 import requests
 import cryptography
@@ -23,21 +24,21 @@ from sklearn.neighbors import KNeighborsClassifier
 
 storage = MemoryStorage()
 
-#try:
-#    url = 'https://spbu.ru/postupayushchim/programms/bakalavriat?view=table'
-#    r = requests.get(url)
-#    html = r.text
-#    soup = BeautifulSoup(html, 'html.parser')
-#except Error as e:
-#    print(f"The error '{e}' occurred")
+try:
+    url = 'https://spbu.ru/postupayushchim/programms/bakalavriat?view=table'
+    r = requests.get(url)
+    html = r.text
+    soup = BeautifulSoup(html, 'html.parser')
+except Error as e:
+    print(f"The error '{e}' occurred")
 
 Domen = 'https://spbu.ru'
 Links = []
 
 answers = [0, 0, 0, 0, 0, 0]
 Types = ["по названию", "по коду", "по укрупненной группе"]
-df = pd.read_csv('C:/Users/Admin/Desktop/AACh_golland_res_csv1.csv')
-df1 = pd.read_csv('C:/Users/Admin/Desktop/AACh_golland_res_csv2.csv')
+df = pd.read_csv('C:/Users/tema2/PycharmProjects/pythonProject/AACh_golland_res_csv1.csv')
+df1 = pd.read_csv('C:/Users/tema2/PycharmProjects/pythonProject/AACh_golland_res_csv2.csv')
 saved_column = df['res']
 saved_column1 = df1['res']
 saved_column_ = df['1']
@@ -82,86 +83,23 @@ def read_db_config(filename, section):
         raise Exception('{0} not found in the {1} file'.format(section, filename))
     return db
 
-config = read_db_config('database.ini', 'database')
+config = read_db_config('config.ini', 'database')
 
 try:
-    connection = pymysql.connect(
-        host=config[0],
+    connection = psycopg2.connect(
+        database=config[0],
         user=config[1],
         password=config[2],
-        db=config[3],
-        charset=config[4]
+        host=config[3],
+        port=config[4]
     )
-    print("Connection to MySQL DB successful")
+    print("Connection to DB successful")
 except Error as e:
     print(f"The error '{e}' occurred")
 
-Token = read_db_config('database.ini', 'token')[0]
+Token = read_db_config('config.ini', 'bot')[0]
 bot = Bot(token=Token)
 dp = Dispatcher(bot, storage=storage)
-
-
-def EduInfo(text, Type):
-    #a func for navigation
-    mas = []
-    if Type == "по названию":
-        text = "'" + text.title() + "'"
-        items = ['Code', 'Duration', 'NumbOfPlaces', 'Cost', 'Description', 'Name', 'Link']
-        with connection.cursor() as cursor:
-            for i in range(len(items)):
-                cursor.execute('SELECT ' + items[i] + ' FROM edus WHERE Name = %s', (text))
-                mas.append(cursor.fetchone())
-    elif Type == "по коду":
-        text = "'" + text + "'"
-        items = ['Name', 'Level', 'Link', 'Duration', 'NumbOfPlaces', 'Cost']
-        with connection.cursor() as cursor:
-            mas.append(text[1:][:-1])
-            for i in range(len(items)):
-                cursor.execute('SELECT ' + items[i] + ' FROM edus WHERE Code = %s', (text))
-                mas.append(cursor.fetchall())
-    elif Type == "по укрупненной группе":
-        items = ['Code', 'Name', 'Link']
-        mas.append(text)
-        with connection.cursor() as cursor:
-            for i in range(len(items)):
-                cursor.execute('SELECT ' + items[i] + ' FROM edus WHERE Block = %s', (text))
-                mas.append(cursor.fetchall())
-
-    return mas
-
-
-def StrReplace(string):
-    #this function helps to rebuild a string
-    if "dict_values" in string:
-        string = string.replace("dict_values", "")
-    string = string[1:][:-1]
-    if len(string) < 150:
-        string = string.replace("[", "").replace("]", "").replace("'", "").replace('"', "")
-        if ")" in string:
-            parts = string.partition(")")
-            string = parts[0] + parts[1]
-        elif "," in string:
-            string = string[:-1]
-    elif "доцент" in string:
-        string = string.replace('t', '_').replace('n', '+').replace("\+\+\+", ".").replace('\+','. ').replace("(", "").replace("\_",
-                                                                                        ".").replace('"', "").replace(
-            "'", "").replace(")", "").replace("xa0", "/").replace("\/", " ").replace('_','t').replace('+','n').replace(' .. .. .','')[:-1]
-
-    else:
-        string = string.replace('n', '+').replace("(","").replace("\+\+",".").replace("\+",
-        ". ").replace('"',"").replace("'","").replace(")","").replace("xa0","/").replace("\/"," ").replace("+","n")[:-1]
-    return string
-
-def replacefornavigation(mas):
-    # it is useful for navigation by code and block, because we get a list of
-    # edus from database
-    result=[]
-    result.append(mas[0])
-    for i in range(len(mas)-1):
-        tmp = list(mas[i+1])
-        for j in range(len(tmp)):
-            result.append(StrReplace(str(tmp[j])))
-    return result
 
 
 def MasFromDB(string):
@@ -175,42 +113,54 @@ def MasFromDB(string):
     return mas1
 
 
-def PrintMas(mas, Type):
+def print_edu(text, Type):
     # a function for beautiful output in Tg-bot
     res = ""
+    cur = connection.cursor()
     if Type == "по названию":
-        if mas[0] == None:
+        cur.execute("select block_name, edu_name, code, level_name, duration_name, number_of_places, description, link "
+                    "from levels as l, durations as d, blocks as b, edus as e "
+                    "where l.level_id = e.level_id and d.duration_id = e.duration_id and b.block_id = e.block_id "
+                    "and edu_name = %(t)s;", {'t': text})
+        information = cur.fetchone()
+        if len(information) == 0:
             res += "Извините, но такой образовательной программы нет."
         else:
-            res = '[' + StrReplace(str(mas[5])) + ']' + '(' + StrReplace(str(mas[6])) + ')' + '\n' + '\n'
-            res += "*Код программы: *" + StrReplace(str(mas[0])) + '\n' + '\n'
-            res += "*Длительность: *" + StrReplace(str(mas[1])) + " лет" + '\n' + '\n'
-            res += "*Количество бюджетных мест: *" + StrReplace(str(mas[2])) + '\n' + '\n'
-            res += "*Стоимость обучения в 2021 году: *" + StrReplace(str(mas[3])) + " рублей" + '\n' + '\n'
-            res += "*Полезная информация: *" + '\n' + StrReplace(str(mas[4]))[1:]
+            res = '[' + information[1] + ']' + '(' + information[7] + ')' + '\n' + '\n'
+            res += "*Код программы: *" + information[2] + '\n' + '\n'
+            res += "*Длительность: *" + information[4]  + '\n' + '\n'
+            res += "*Количество бюджетных мест: *" + str(information[5]) + '\n' + '\n'
+            res += "*Описание: *" + '\n' + information[6]
         return res
     elif Type == "по коду":
-        if len(mas)<6:
+        cur.execute("select edu_name, level_name, duration_name, number_of_places, link "
+                    "from levels as l, durations as d, edus as e "
+                    "where l.level_id = e.level_id and d.duration_id = e.duration_id "
+                    "and code = %(t)s;", {'t': text})
+        edus = cur.fetchall()
+        if len(edus)==0:
             res += "Извините, но такого кода не найдено."
         else:
-            res = "По коду " + str(mas[0]) + " найдено:" + '\n'
-            k = int((len(mas)-1)/6)
-            for i in range(k):
-                res += str(i+1) + ". " + '[' + str(mas[1+i]) + ']' + '(' + str(mas[(2*k+1)+i]) + ')' + '\n'
-                res += "     " + "Уровень обучения: " + str(mas[k+1+i]) + '\n'
-                res += "     " + "Продолжительность: " + str(mas[3*k+1+i]) + " лет" + '\n'
-                res += "     " + "Количество бюджетных мест: " + str(mas[4*k+1+i]) + '\n'
-                res += "     " + "Цена: " + str(mas[5*k+1+i]) + " рублей" + '\n'
+            res = "По коду " + text + " найдено:" + '\n'
+            for i in range(len(edus)):
+                res += str(i+1) + ". " + '[' + edus[i][0] + ']' + '(' + edus[i][4] + ')' + '\n'
+                res += "     " + "Уровень обучения: " + edus[i][1] + '\n'
+                res += "     " + "Продолжительность: " + edus[i][2] + '\n'
+                res += "     " + "Количество бюджетных мест: " + str(edus[i][3]) + '\n'
         return res
     elif Type == "по укрупненной группе":
-        if len(mas)<6:
-            res += "Извините, но такого кода не найдено."
+        cur.execute("select code, edu_name, link "
+                    "from levels as l, durations as d, edus as e, blocks as b "
+                    "where l.level_id = e.level_id and d.duration_id = e.duration_id and b.block_id = e.block_id "
+                    "and block_name = %(t)s;", {'t': text})
+        edus = cur.fetchall()
+        if len(edus) == 0:
+            res += "Извините, но такого блока не найдено."
         else:
-            res += "По группе " + str(mas[0]) + " найдено:" + '\n'
-            k = int((len(mas) - 1) / 3)
-            for i in range(k):
-                res += "*" + str(i + 1) + "*" + ". " + str(mas[1 + i]) + " " + '[' + str(mas[k + 1 + i]) + ']' + '(' + str(
-                    mas[(2 * k + 1) + i]) + ')' + '\n'
+            res += "По группе " + text + " найдено:" + '\n'
+            for i in range(len(edus)):
+                res += "*" + str(i+1) + "*" + ". " + edus[i][0] + " " + '[' + edus[i][1] + ']' + '(' + \
+                       edus[i][2] + ')' + '\n'
         return res
 
 def GetProfessionID(prof):
@@ -225,7 +175,7 @@ def GetProfessionID(prof):
         with connection.cursor() as cursor:
             cursor.execute("select ID2 from Test where Profession2 = %s",(prof))
             ind = cursor.fetchone()
-    answers[int(StrReplace(str(ind)))-1]+=1
+    answers[int(StrReplace(str(ind)))-1]+=1 
 
 
 @dp.message_handler(commands='start' or "Start")
@@ -266,7 +216,7 @@ async def navigation(msg: types.Message):
     await Navigation.wait_for_type.set()
 
 async def chosentype(msg: types.Message, state: FSMContext):
-    # Here a user gets a suitable answer. Then he can 
+    # Here a user gets a suitable answer. Then he can
     if msg.text in Types:
         await state.update_data(navitype=msg.text)
         data = await state.get_data()
@@ -289,16 +239,16 @@ async def NavigationByType(msg: types.Message, state: FSMContext):
     buttons = ["Функции бота", "Навигация", "Профориентация"]
     keyboard.add(*buttons)
     if data['navitype'] == Types[0]:
-        await msg.answer(PrintMas(EduInfo(str(data["Info"]), str(data["navitype"])),str(data["navitype"])),
+        await msg.answer(print_edu(str(data["Info"]), str(data["navitype"])),
                          parse_mode='Markdown', reply_markup=keyboard)
         await state.finish()
     elif data['navitype'] == Types[1]:
-        await msg.answer(PrintMas(replacefornavigation(EduInfo(str(data["Info"]), str(data["navitype"]))),
-                                  str(data["navitype"])), parse_mode='Markdown',  reply_markup=keyboard)
+        await msg.answer(print_edu(str(data["Info"]), str(data["navitype"])),
+                         parse_mode='Markdown', reply_markup=keyboard)
         await state.finish()
     elif data['navitype'] == Types[2]:
-        await msg.answer(PrintMas(replacefornavigation(EduInfo(str(data["Info"]), str(data["navitype"]))),
-                                  str(data["navitype"])), parse_mode='Markdown', reply_markup=keyboard)
+        await msg.answer(print_edu(str(data["Info"]), str(data["navitype"])),
+                         parse_mode='Markdown', reply_markup=keyboard)
         await Navigation.next()
         await msg.answer("Если Вы хотите узнать подробную информацию по образовательной программе, то введите "
                          "её название, иначе введите Выход")
@@ -314,7 +264,7 @@ async def Continuation(msg: types.Message, state: FSMContext):
         await state.finish()
         await msg.answer("Чем я могу быть полезен?", reply_markup=keyboard)
     else:
-        await msg.answer(PrintMas(EduInfo(str(data["Answer"]), "по названию"), "по названию"),
+        await msg.answer(print_edu(str(data["Answer"]), "по названию"),
                          parse_mode='Markdown', reply_markup=keyboard)
         await state.finish()
 
@@ -328,7 +278,7 @@ def PredictEdu():
             ar.append(int(mas[i][5:]))
         result_mas.append(ar)
 
-    result_mas.remove(ar1[0])
+    #result_mas.remove(ar[0])
 
     for j in range(len(saved_column1)):
         mas1 = saved_column1[j][1:][:-1].split(', ')
