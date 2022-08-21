@@ -1,20 +1,15 @@
 import bs4
-import mysql.connector
 import requests
-import cryptography
 from configparser import ConfigParser
 from aiogram import Bot, types
 from aiogram.dispatcher import Dispatcher
 from aiogram.utils import executor
 from bs4 import BeautifulSoup
 import getpass
-import pymysql
 import psycopg2
-from mysql.connector import MySQLConnection, Error
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.dispatcher import FSMContext
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-import sklearn
 import numpy as np
 import pandas as pd
 import csv
@@ -29,8 +24,8 @@ try:
     r = requests.get(url)
     html = r.text
     soup = BeautifulSoup(html, 'html.parser')
-except Error as e:
-    print(f"The error '{e}' occurred")
+except ConnectionError:
+    print("An error occurred")
 
 Domen = 'https://spbu.ru'
 Links = []
@@ -44,22 +39,23 @@ saved_column1 = df1['res']
 saved_column_ = df['1']
 saved_column_1 = df1['1']
 
-
 result = ["профессии механика, электрика, инженера, агронома, садовода, кондитера, повара и другие профессии, "
           "которые предполагают решение конкретных задач, наличие подвижности, настойчивости, связь с техникой",
           "профессии научно-исследовательского направления: ботаник, физик, философ, программист и другие, "
           "в деятельности которых необходимы творческие способности и нестандартное мышление.",
           "профессии, связанные с обучением, лечением и обслуживанием, требующие постоянного контакта и общения с людьми"
           ", способностей к убеждению.", "профессии бухгалтер, патентовед, нотариус, топограф, корректор и другие, "
-          "направленные на обработку информации, предоставленной в виде условных знаков, цифр, формул, текстов.",
+                                         "направленные на обработку информации, предоставленной в виде условных знаков, цифр, формул, текстов.",
           "профессии предприниматель, менеджер, продюсер и другие, связанные с руководством, управлением и "
           "влиянием на разных людей в разных ситуациях.", "профессии, связанные с актерско-сценической, музыкальной, "
-          "изобразительной деятельностью."]
+                                                          "изобразительной деятельностью."]
+
 
 class item:
     k = 0
 
-def Clear():
+
+def clear():
     item.k = 0
     answers = [0, 0, 0, 0, 0, 0]
 
@@ -71,7 +67,7 @@ class Navigation(StatesGroup):
 
 
 def read_db_config(filename, section):
-    #a function for connection to database and Tg-bot
+    # a function for connection to database and Tg-bot
     parser = ConfigParser()
     parser.read(filename)
     db = []
@@ -82,6 +78,7 @@ def read_db_config(filename, section):
     else:
         raise Exception('{0} not found in the {1} file'.format(section, filename))
     return db
+
 
 config = read_db_config('config.ini', 'database')
 
@@ -94,23 +91,20 @@ try:
         port=config[4]
     )
     print("Connection to DB successful")
-except Error as e:
-    print(f"The error '{e}' occurred")
+except:
+    print(f"An error occurred")
 
 Token = read_db_config('config.ini', 'bot')[0]
 bot = Bot(token=Token)
 dp = Dispatcher(bot, storage=storage)
 
 
-def MasFromDB(string):
+def get_list_of_prof(string):
     # making a list from information that is brought from database
     with connection.cursor() as cursor:
-        cursor.execute("select "+string+" from Test;")
-        mas = cursor.fetchall()
-        mas1 = []
-        for i in range(len(mas)):
-            mas1.append(StrReplace(str(mas[i])))
-    return mas1
+        cursor.execute("select " + string + " from Test;")
+        tup = cursor.fetchall()
+    return tup
 
 
 def print_edu(text, Type):
@@ -128,7 +122,7 @@ def print_edu(text, Type):
         else:
             res = '[' + information[1] + ']' + '(' + information[7] + ')' + '\n' + '\n'
             res += "*Код программы: *" + information[2] + '\n' + '\n'
-            res += "*Длительность: *" + information[4]  + '\n' + '\n'
+            res += "*Длительность: *" + information[4] + '\n' + '\n'
             res += "*Количество бюджетных мест: *" + str(information[5]) + '\n' + '\n'
             res += "*Описание: *" + '\n' + information[6]
         return res
@@ -138,12 +132,12 @@ def print_edu(text, Type):
                     "where l.level_id = e.level_id and d.duration_id = e.duration_id "
                     "and code = %(t)s;", {'t': text})
         edus = cur.fetchall()
-        if len(edus)==0:
+        if len(edus) == 0:
             res += "Извините, но такого кода не найдено."
         else:
             res = "По коду " + text + " найдено:" + '\n'
             for i in range(len(edus)):
-                res += str(i+1) + ". " + '[' + edus[i][0] + ']' + '(' + edus[i][4] + ')' + '\n'
+                res += str(i + 1) + ". " + '[' + edus[i][0] + ']' + '(' + edus[i][4] + ')' + '\n'
                 res += "     " + "Уровень обучения: " + edus[i][1] + '\n'
                 res += "     " + "Продолжительность: " + edus[i][2] + '\n'
                 res += "     " + "Количество бюджетных мест: " + str(edus[i][3]) + '\n'
@@ -159,41 +153,43 @@ def print_edu(text, Type):
         else:
             res += "По группе " + text + " найдено:" + '\n'
             for i in range(len(edus)):
-                res += "*" + str(i+1) + "*" + ". " + edus[i][0] + " " + '[' + edus[i][1] + ']' + '(' + \
+                res += "*" + str(i + 1) + "*" + ". " + edus[i][0] + " " + '[' + edus[i][1] + ']' + '(' + \
                        edus[i][2] + ')' + '\n'
         return res
 
-def GetProfessionID(prof):
+
+def get_prof_id(prof):
     # the function shows Golland's test logic: when a person chooses a
     # profession, we get the type of it and add 1 to the position type-1
     # in list with answers
-    if prof in MasFromDB("Profession1"):
+    ind = 0
+    if (prof,) in get_list_of_prof("name1"):
         with connection.cursor() as cursor:
-            cursor.execute("select ID1 from Test where Profession1 = %s",(prof))
-            ind = cursor.fetchone()
-    elif prof in MasFromDB("Profession2"):
+            cursor.execute("select group1 from Test where name1 = %(p)s", {'p': prof})
+            ind = cursor.fetchone()[0]
+    elif prof in get_list_of_prof("name2"):
         with connection.cursor() as cursor:
-            cursor.execute("select ID2 from Test where Profession2 = %s",(prof))
-            ind = cursor.fetchone()
-    answers[int(StrReplace(str(ind)))-1]+=1 
+            cursor.execute("select group2 from Test where name2 = %(p)s", {'p': prof})
+            ind = cursor.fetchone()[0]
+    answers[ind - 1] += 1
 
 
 @dp.message_handler(commands='start' or "Start")
-async def Buttons(msg: types.Message):
+async def buttons(msg: types.Message):
     # a function, that shows welcome message and outputs all needed buttons
     if item.k != 0:
-        Clear()
+        clear()
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     buttons = ["Функции бота", "Навигация", "Профориентация"]
     keyboard.add(*buttons)
     await msg.answer('Здравствуйте! Я бот СпбГУ. Чем могу быть полезен?', reply_markup=keyboard)
 
 
-@dp.message_handler(lambda msg:msg.text == "Профориентация")
-async def Prof(msg: types.Message):
+@dp.message_handler(lambda msg: msg.text == "Профориентация")
+async def prof(msg: types.Message):
     # a function for Golland's test
     if item.k != 0:
-        Clear()
+        clear()
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     buttons = ["Функции бота", "Навигация", "Профориентация"]
     keyboard.add(*buttons)
@@ -203,19 +199,20 @@ async def Prof(msg: types.Message):
     await msg.answer("Для того, чтобы начать тест, введите команду /test.", reply_markup=keyboard)
 
 
-@dp.message_handler(lambda msg:msg.text == "Навигация")
+@dp.message_handler(lambda msg: msg.text == "Навигация")
 async def navigation(msg: types.Message):
     # function for navigation. Here a user have to choose what type of navigation he needs.
-    # After clicking a button with type, state machine remembers the answer and goes to the chosentype def
+    # After clicking a button with type, state machine remembers the answer and goes to the chosen type def
     if item.k != 0:
-        Clear()
+        clear()
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     buttons = ["по названию", "по коду", "по укрупненной группе"]
     keyboard.add(*buttons)
     await msg.answer("Пожалуйста, выберите тип навигации:", reply_markup=keyboard)
     await Navigation.wait_for_type.set()
 
-async def chosentype(msg: types.Message, state: FSMContext):
+
+async def continue_chosen_type(msg: types.Message, state: FSMContext):
     # Here a user gets a suitable answer. Then he can
     if msg.text in Types:
         await state.update_data(navitype=msg.text)
@@ -223,7 +220,8 @@ async def chosentype(msg: types.Message, state: FSMContext):
         await Navigation.next()
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
         keyboard.add("Физико-математические, компьютерные и информационные науки", "Естественные науки", "Науки об "
-        "обществе", "Гуманитарные науки", "Искусство и культура", "Физическая культура")
+                                                                                                         "обществе",
+                     "Гуманитарные науки", "Искусство и культура", "Физическая культура")
         if data['navitype'] == Types[0]:
             await msg.answer("Введите название образовательной программы.")
         elif data["navitype"] == Types[1]:
@@ -231,8 +229,9 @@ async def chosentype(msg: types.Message, state: FSMContext):
         else:
             await msg.answer("Выберите название укрупненной группы.", reply_markup=keyboard)
 
-async def NavigationByType(msg: types.Message, state: FSMContext):
-    #returns the result of navigation
+
+async def make_navi_by_type(msg: types.Message, state: FSMContext):
+    # returns the result of navigation
     await state.update_data(Info=msg.text)
     data = await state.get_data()
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -253,8 +252,9 @@ async def NavigationByType(msg: types.Message, state: FSMContext):
         await msg.answer("Если Вы хотите узнать подробную информацию по образовательной программе, то введите "
                          "её название, иначе введите Выход")
 
-async def Continuation(msg: types.Message, state: FSMContext):
-    #if user chose navigation by block, he can write edu name and get information about it
+
+async def continuation(msg: types.Message, state: FSMContext):
+    # if user chose navigation by block, he can write edu name and get information about it
     await state.update_data(Answer=msg.text)
     data = await state.get_data()
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -268,8 +268,9 @@ async def Continuation(msg: types.Message, state: FSMContext):
                          parse_mode='Markdown', reply_markup=keyboard)
         await state.finish()
 
-def PredictEdu():
-    #the function for classifier
+
+def predict_edu():
+    # the function for classifier
     result_mas = [[]]
     for j in range(len(saved_column)):
         mas = saved_column[j][1:][:-1].split(', ')
@@ -278,7 +279,7 @@ def PredictEdu():
             ar.append(int(mas[i][5:]))
         result_mas.append(ar)
 
-    #result_mas.remove(ar[0])
+    # result_mas.remove(ar[0])
 
     for j in range(len(saved_column1)):
         mas1 = saved_column1[j][1:][:-1].split(', ')
@@ -314,20 +315,20 @@ def PredictEdu():
     print(edu)
     e = "'Технологии программирования'"
     with connection.cursor() as cur:
-        if("Технологии программирования" in edu):
-            cur.execute('select Block from edus where Name = %s',(e))
+        if ("Технологии программирования" in edu):
+            cur.execute('select Block from edus where Name = %s', (e))
             block = cur.fetchone()
         else:
-            cur.execute("select Block from edus where Name = %s",("'"+edu[9:]+"'"))
+            cur.execute("select Block from edus where Name = %s", ("'" + edu[9:] + "'"))
             block = cur.fetchone()
     return StrReplace(str(block))
 
 
 @dp.message_handler(lambda msg: msg.text == "Функции бота")
 async def functions(msg: types.Message):
-    #shows Tg-bot's functions to a user
+    # shows Tg-bot's functions to a user
     if item.k != 0:
-        Clear()
+        clear()
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     buttons = ["Функции бота", "Навигация", "Профориентация"]
     keyboard.add(*buttons)
@@ -336,68 +337,72 @@ async def functions(msg: types.Message):
             "Для старта введите команду /start" + '\n' + '\n' +
             "Если Вы хотите узнать подробную информацию об образовательной программе, нажмите на кнопку *Навигация "
             "по программам*" + '\n' + '\n' + "Для того, чтобы пройти профориентационный "
-            "тест, введите нажмите на кнопку *Профориентация*"
+                                             "тест, введите нажмите на кнопку *Профориентация*"
             , parse_mode='Markdown', reply_markup=keyboard)
 
 
 @dp.message_handler()
-async def Test(msg: types.Message):
-    #Golland's test for a user
+async def pass_test(msg: types.Message): # rewrite
+    # Golland's test for a user
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     if "test" in msg.text and item.k != 0:
-        Clear()
-    if ("test" or "start" or "Start" or "Функции бота" or "Навигация" or "Профориентация") not in msg.text and item.k==0:
-        await msg.answer("Извините, но я Вас не понимаю. Если Вы хотите узнать, что я умею, введите " + '"Функции бота"')
-    elif (("test" in msg.text) or (msg.text in MasFromDB("Profession1")) or (msg.text in MasFromDB("Profession2"))) and \
-            item.k < len(MasFromDB("Profession1")):
+        clear()
+    if (
+            "test" or "start" or "Start" or "Функции бота" or "Навигация" or "Профориентация") not in msg.text and item.k == 0:
+        await msg.answer(
+            "Извините, но я Вас не понимаю. Если Вы хотите узнать, что я умею, введите " + '"Функции бота"')
+    elif (("test" in msg.text) or (msg.text in get_list_of_prof("name1")) or (
+            msg.text in get_list_of_prof("name2"))) and \
+            item.k < len(get_list_of_prof("name1")):
         i = item.k
         if i != 0:
-            GetProfessionID(msg.text)
-        keyboard.add(str(MasFromDB("Profession1")[i]), str(MasFromDB("Profession2")[i]))
+            get_prof_id(msg.text)
+        keyboard.add(str(get_list_of_prof("name1")[i][0]), str(get_list_of_prof("name2")[i][0]))
         item.k += 1
-        await msg.answer(str(MasFromDB("Profession1")[i]) + " или " + str(MasFromDB("Profession2")[i]) + "?",
-                         reply_markup=keyboard)
-    elif item.k != 0 and ((msg.text not in MasFromDB("Profession1")) or (msg.text not in MasFromDB("Profession2"))) and \
-            item.k < len(MasFromDB("Profession1")):
+        await msg.answer(
+            str(get_list_of_prof("name1")[i][0]) + " или " + str(get_list_of_prof("name2")[i][0]) + "?",
+            reply_markup=keyboard)
+    elif item.k != 0 and (
+            (msg.text not in get_list_of_prof("name1")) or (msg.text not in get_list_of_prof("name2"))) and \
+            item.k < len(get_list_of_prof("name1")):
         await msg.answer("Пожалуйста, введите одну из предложенных профессий.")
     else:
-        if item.k == len(MasFromDB("Profession1")):
-            GetProfessionID(msg.text)
+        if item.k == len(get_list_of_prof("name1")):
+            get_prof_id(msg.text)
             keyboard.add("Функции бота", "Навигация по программам", "Профориентация")
-            s = str(PredictEdu())
+            s = str(predict_edu())
             await msg.answer("Спасибо Вам за прохождение теста!" + '\n' + '\n'
                              + "По результатам профориентационного " + "тестирования, Вам подходят " +
-                             result[answers.index(max(answers))] +'\n' + '\n' + "Возможно, Вам " +
-                            "стоит рассмотреть следующий блок направлений: " + s , reply_markup=keyboard)
+                             result[answers.index(max(answers))] + '\n' + '\n' + "Возможно, Вам " +
+                             "стоит рассмотреть следующий блок направлений: " + s, reply_markup=keyboard)
 
 
-
-
-dp.register_message_handler(Prof, lambda msg: msg.text == "Профориентация")
+dp.register_message_handler(prof, lambda msg: msg.text == "Профориентация")
 dp.register_message_handler(navigation, lambda msg: msg.text == "Навигация", state="*")
-dp.register_message_handler(chosentype, state=Navigation.wait_for_type)
-dp.register_message_handler(NavigationByType, state=Navigation.wait_for_answer)
-dp.register_message_handler(Continuation, state=Navigation.wait_for_continue)
+dp.register_message_handler(continue_chosen_type, state=Navigation.wait_for_type)
+dp.register_message_handler(make_navi_by_type, state=Navigation.wait_for_answer)
+dp.register_message_handler(continuation, state=Navigation.wait_for_continue)
 dp.register_message_handler(functions)
-dp.register_message_handler(Test)
+dp.register_message_handler(pass_test)
 
 
 def parser():
     cur = connection.cursor()
-    Blocks = {"Физико-математические, компьютерные и информационные науки": 0,
-              "Естественные науки": 1,
-              "Науки об обществе": 2,
-              "Гуманитарные науки": 3,
-              "Искусство и культура": 4,
-              "Физическая культура": 5
-              }
-    Levels = {"Бакалавриат": 1, "Cпециалитет": 2}
-    Durations = {"4": 1, "5": 2, "6": 3}
+    blocks_dict = {"Физико-математические, компьютерные и информационные науки": 0,
+                   "Естественные науки": 1,
+                   "Науки об обществе": 2,
+                   "Гуманитарные науки": 3,
+                   "Искусство и культура": 4,
+                   "Физическая культура": 5
+                   }
+    levels_dict = {"Бакалавриат": 1, "Cпециалитет": 2}
+    durations_dict = {"4": 1, "5": 2, "6": 3}
     table = soup.find('div', class_="table-programs-wrapper g-container")
     counter = 0
     for i in range(6):
-        table_block = table.find('div', id='programs-section-'+str(i))
-        block = (table_block.find('div', class_ = 'table-programs__title table-programs__title--'+str(i+1))).get_text().replace('\n', '').strip()
+        table_block = table.find('div', id='programs-section-' + str(i))
+        block = (table_block.find('div', class_='table-programs__title table-programs__title--' + str(
+            i + 1))).get_text().replace('\n', '').strip()
         programs = table_block.find_all('a', class_="table__row")
         for program in programs:
             counter += 1
@@ -415,31 +420,34 @@ def parser():
                                             class_='program-stats__table program-stats__table--small').get_text().replace(
                 '\n', '')[:3]
             numberofplaces = ''.join(i for i in numberofplaces if i.isdigit())
-            program_description = program_soup.find('div', class_ = 'collapse-items col-xs-12 col-md-8')
+            program_description = program_soup.find('div', class_='collapse-items col-xs-12 col-md-8')
             description = ''
             items = program_description.find_all('div', class_='collapse')
             for item in items:
                 if "Описание программы" in str(items):
                     if "Описание программы" in item.get_text():
-
                         description = ''
-                        description += item.get_text().replace("Описание программы", '').replace('\n','. ').strip('. ')
+                        description += item.get_text().replace("Описание программы", '').replace('\n', '. ').strip('. ')
                 else:
                     if "Преимущества обучения" in item.get_text():
                         description = ''
-                        description += item.get_text().replace("Преимущества обучения", '').replace('\n', '. ').strip('. ')
+                        description += item.get_text().replace("Преимущества обучения", '').replace('\n', '. ').strip(
+                            '. ')
             cur.execute("insert into EDUs (edu_id, block_id, edu_name, code, level_id, duration_id, number_of_places, "
                         "description, link) values (%(count)s, %(block)s, %(name)s, %(code)s, %(level)s, "
                         "%(duration)s, %(num)s, %(description)s, %(link)s)", {"count": counter,
-                                                                              "block": Blocks[block], "name": name,
-                                                                              "code": code, "level": Levels[level],
-                                                                              "duration": Durations[duration],
+                                                                              "block": blocks_dict[block], "name": name,
+                                                                              "code": code, "level": levels_dict[level],
+                                                                              "duration": durations_dict[duration],
                                                                               "num": numberofplaces,
                                                                               "description": description, "link": link})
             connection.commit()
             print(f"{name} successfully added.")
 
-#parser()
+
+# parser()
+
+
 if __name__ == '__main__':
     executor.start_polling(dp)
 
