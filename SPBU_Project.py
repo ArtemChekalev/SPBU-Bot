@@ -16,6 +16,8 @@ import csv
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsClassifier
+from fuzzywuzzy import fuzz
+import Levenshtein
 
 storage = MemoryStorage()
 
@@ -28,8 +30,6 @@ except ConnectionError:
     print("An error occurred")
 
 Domen = 'https://spbu.ru'
-Links = []
-
 answers = [0, 0, 0, 0, 0, 0]
 Types = ["по названию", "по коду", "по укрупненной группе"]
 df = pd.read_csv('C:/Users/tema2/PycharmProjects/pythonProject/AACh_golland_res_csv1.csv')
@@ -45,7 +45,7 @@ result = ["профессии механика, электрика, инжене
           "в деятельности которых необходимы творческие способности и нестандартное мышление.",
           "профессии, связанные с обучением, лечением и обслуживанием, требующие постоянного контакта и общения с людьми"
           ", способностей к убеждению.", "профессии бухгалтер, патентовед, нотариус, топограф, корректор и другие, "
-                                         "направленные на обработку информации, предоставленной в виде условных знаков, цифр, формул, текстов.",
+          "направленные на обработку информации, предоставленной в виде условных знаков, цифр, формул, текстов.",
           "профессии предприниматель, менеджер, продюсер и другие, связанные с руководством, управлением и "
           "влиянием на разных людей в разных ситуациях.", "профессии, связанные с актерско-сценической, музыкальной, "
                                                           "изобразительной деятельностью."]
@@ -99,6 +99,18 @@ bot = Bot(token=Token)
 dp = Dispatcher(bot, storage=storage)
 
 
+def offer_edus(message):
+    with connection.cursor() as cursor:
+        cursor.execute("select edu_name from edus")
+        tup = cursor.fetchall()
+    dictionary = {}
+    for name in tup:
+        dictionary[name[0]] = fuzz.partial_ratio(message.upper(), name[0].upper())
+    li = sorted(dictionary.items(), key=lambda x: x[1], reverse = True)
+    if li[0][1] != 0:
+        return li[0][0], li[1][0], li[2][0]
+
+
 def get_list_of_prof(string):
     # making a list from information that is brought from database
     with connection.cursor() as cursor:
@@ -117,8 +129,8 @@ def print_edu(text, Type):
                     "where l.level_id = e.level_id and d.duration_id = e.duration_id and b.block_id = e.block_id "
                     "and edu_name = %(t)s;", {'t': text})
         information = cur.fetchone()
-        if len(information) == 0:
-            res += "Извините, но такой образовательной программы нет."
+        if information is None or len(information) == 0:
+            return None
         else:
             res = '[' + information[1] + ']' + '(' + information[7] + ')' + '\n' + '\n'
             res += "*Код программы: *" + information[2] + '\n' + '\n'
@@ -167,7 +179,7 @@ def get_prof_id(prof):
         with connection.cursor() as cursor:
             cursor.execute("select group1 from Test where name1 = %(p)s", {'p': prof})
             ind = cursor.fetchone()[0]
-    elif prof in get_list_of_prof("name2"):
+    elif (prof,) in get_list_of_prof("name2"):
         with connection.cursor() as cursor:
             cursor.execute("select group2 from Test where name2 = %(p)s", {'p': prof})
             ind = cursor.fetchone()[0]
@@ -235,19 +247,28 @@ async def make_navi_by_type(msg: types.Message, state: FSMContext):
     await state.update_data(Info=msg.text)
     data = await state.get_data()
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    buttons_keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     buttons = ["Функции бота", "Навигация", "Профориентация"]
-    keyboard.add(*buttons)
+    buttons_keyboard.add(*buttons)
     if data['navitype'] == Types[0]:
-        await msg.answer(print_edu(str(data["Info"]), str(data["navitype"])),
-                         parse_mode='Markdown', reply_markup=keyboard)
-        await state.finish()
+        if print_edu(str(data["Info"]), str(data["navitype"])) is None:
+            edus = offer_edus(str(data["Info"]))
+            if edus is not None:
+                keyboard.add(*edus)
+                await msg.answer("Возможно, Вы имели ввиду одно из следующих направлений:", reply_markup=keyboard)
+        else:
+            await msg.answer(print_edu(str(data["Info"]), str(data["navitype"])),
+                         parse_mode='Markdown', reply_markup=buttons_keyboard)
+            await state.finish()
     elif data['navitype'] == Types[1]:
+        keyboard.add(*buttons)
         await msg.answer(print_edu(str(data["Info"]), str(data["navitype"])),
-                         parse_mode='Markdown', reply_markup=keyboard)
+                         parse_mode='Markdown', reply_markup=buttons_keyboard)
         await state.finish()
     elif data['navitype'] == Types[2]:
+        keyboard.add(*buttons)
         await msg.answer(print_edu(str(data["Info"]), str(data["navitype"])),
-                         parse_mode='Markdown', reply_markup=keyboard)
+                         parse_mode='Markdown', reply_markup=buttons_keyboard)
         await Navigation.next()
         await msg.answer("Если Вы хотите узнать подробную информацию по образовательной программе, то введите "
                          "её название, иначе введите Выход")
@@ -321,7 +342,7 @@ def predict_edu():
         else:
             cur.execute("select Block from edus where Name = %s", ("'" + edu[9:] + "'"))
             block = cur.fetchone()
-    return StrReplace(str(block))
+    return str(block)
 
 
 @dp.message_handler(lambda msg: msg.text == "Функции бота")
@@ -341,6 +362,9 @@ async def functions(msg: types.Message):
             , parse_mode='Markdown', reply_markup=keyboard)
 
 
+
+
+
 @dp.message_handler()
 async def pass_test(msg: types.Message): # rewrite
     # Golland's test for a user
@@ -351,8 +375,8 @@ async def pass_test(msg: types.Message): # rewrite
             "test" or "start" or "Start" or "Функции бота" or "Навигация" or "Профориентация") not in msg.text and item.k == 0:
         await msg.answer(
             "Извините, но я Вас не понимаю. Если Вы хотите узнать, что я умею, введите " + '"Функции бота"')
-    elif (("test" in msg.text) or (msg.text in get_list_of_prof("name1")) or (
-            msg.text in get_list_of_prof("name2"))) and \
+    elif (("test" in msg.text) or ((msg.text,) in get_list_of_prof("name1")) or (
+            (msg.text,) in get_list_of_prof("name2"))) and \
             item.k < len(get_list_of_prof("name1")):
         i = item.k
         if i != 0:
@@ -363,18 +387,17 @@ async def pass_test(msg: types.Message): # rewrite
             str(get_list_of_prof("name1")[i][0]) + " или " + str(get_list_of_prof("name2")[i][0]) + "?",
             reply_markup=keyboard)
     elif item.k != 0 and (
-            (msg.text not in get_list_of_prof("name1")) or (msg.text not in get_list_of_prof("name2"))) and \
+            ((msg.text,) not in get_list_of_prof("name1")) or ((msg.text,) not in get_list_of_prof("name2"))) and \
             item.k < len(get_list_of_prof("name1")):
         await msg.answer("Пожалуйста, введите одну из предложенных профессий.")
     else:
         if item.k == len(get_list_of_prof("name1")):
             get_prof_id(msg.text)
             keyboard.add("Функции бота", "Навигация по программам", "Профориентация")
-            s = str(predict_edu())
+            # s = str(predict_edu())
             await msg.answer("Спасибо Вам за прохождение теста!" + '\n' + '\n'
                              + "По результатам профориентационного " + "тестирования, Вам подходят " +
-                             result[answers.index(max(answers))] + '\n' + '\n' + "Возможно, Вам " +
-                             "стоит рассмотреть следующий блок направлений: " + s, reply_markup=keyboard)
+                             result[answers.index(max(answers))] + '\n' , reply_markup=keyboard)
 
 
 dp.register_message_handler(prof, lambda msg: msg.text == "Профориентация")
