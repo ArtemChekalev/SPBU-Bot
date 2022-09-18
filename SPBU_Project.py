@@ -18,6 +18,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsClassifier
 from fuzzywuzzy import fuzz
 import Levenshtein
+import re
 
 storage = MemoryStorage()
 
@@ -32,12 +33,8 @@ except ConnectionError:
 Domen = 'https://spbu.ru'
 answers = [0, 0, 0, 0, 0, 0]
 Types = ["по названию", "по коду", "по укрупненной группе"]
-df = pd.read_csv('C:/Users/tema2/PycharmProjects/pythonProject/AACh_golland_res_csv1.csv')
-df1 = pd.read_csv('C:/Users/tema2/PycharmProjects/pythonProject/AACh_golland_res_csv2.csv')
-saved_column = df['res']
-saved_column1 = df1['res']
-saved_column_ = df['1']
-saved_column_1 = df1['1']
+f = open("C:/Users/tema2/OneDrive/Рабочий стол/gollandResults.txt", 'r', encoding='utf-8')
+
 
 result = ["профессии механика, электрика, инженера, агронома, садовода, кондитера, повара и другие профессии, "
           "которые предполагают решение конкретных задач, наличие подвижности, настойчивости, связь с техникой",
@@ -290,59 +287,48 @@ async def continuation(msg: types.Message, state: FSMContext):
         await state.finish()
 
 
-def predict_edu():
+def check(st):
+    newS = " ".join(re.findall('"[1-6]"', st)).replace('"', '')
+    for i in range(1, 7):
+        if str(i) not in newS:
+            return i - 1
+    return -1
+
+
+def predict_edu(answer):
     # the function for classifier
-    result_mas = [[]]
-    for j in range(len(saved_column)):
-        mas = saved_column[j][1:][:-1].split(', ')
-        ar = []
-        for i in range(len(mas)):
-            ar.append(int(mas[i][5:]))
-        result_mas.append(ar)
-
-    # result_mas.remove(ar[0])
-
-    for j in range(len(saved_column1)):
-        mas1 = saved_column1[j][1:][:-1].split(', ')
-        ar = []
-        for i in range(len(mas1)):
-            ar.append(int(mas1[i][5:]))
-        result_mas.append(ar)
-
+    li = f.read().split("vk_id")
+    del li[0]
+    Golland_res = []
     edus = []
-
-    for j in range(len(saved_column_)):
-        edu = ((saved_column_[j].split('"content": ')[1]).split(' "description":')[0])[:-1].replace('"', '')
+    for item in li:
+        match = re.findall('"[1-6]": [0-9]*', item)
+        st = "".join(match)
+        ind = check(st)
+        str_numbers = re.sub('"[1-6]":', '', st)
+        numbers = [int(num) for num in str_numbers.split()]
+        if ind != -1:
+            numbers.insert(ind, 0)
+        match_edu = re.search('\d\d.\d\d.\d\d \D*?"', item)
+        edu = re.sub('\d\d.\d\d.\d\d ', '', match_edu[0]).replace('"', '')
+        Golland_res.append(numbers)
         edus.append(edu)
 
-    for k in range(len(saved_column_1)):
-        edu = ((saved_column_1[k].split('"content": ')[1]).split(' "description":')[0])[:-1].replace('"', '')
-        edus.append(edu)
-
-    X = np.array(result_mas)
+    X = np.array(Golland_res)
     Y = np.array(edus)
-    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.025)
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.15)
 
     scaler = StandardScaler()
     scaler.fit(X_train)
 
     X_train = scaler.transform(X_train)
 
-    classifier = KNeighborsClassifier(n_neighbors=1)
+    classifier = KNeighborsClassifier(n_neighbors=5)
     classifier.fit(X_train, Y_train)
-    ans = np.array(answers)
+    ans = np.array(answer)
     y_pred = classifier.predict([ans])
     edu = str(y_pred)[2:][:-2]
-    print(edu)
-    e = "'Технологии программирования'"
-    with connection.cursor() as cur:
-        if ("Технологии программирования" in edu):
-            cur.execute('select Block from edus where Name = %s', (e))
-            block = cur.fetchone()
-        else:
-            cur.execute("select Block from edus where Name = %s", ("'" + edu[9:] + "'"))
-            block = cur.fetchone()
-    return str(block)
+    return str(edu)
 
 
 @dp.message_handler(lambda msg: msg.text == "Функции бота")
@@ -362,11 +348,8 @@ async def functions(msg: types.Message):
             , parse_mode='Markdown', reply_markup=keyboard)
 
 
-
-
-
 @dp.message_handler()
-async def pass_test(msg: types.Message): # rewrite
+async def pass_test(msg: types.Message):
     # Golland's test for a user
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     if "test" in msg.text and item.k != 0:
@@ -397,7 +380,9 @@ async def pass_test(msg: types.Message): # rewrite
             # s = str(predict_edu())
             await msg.answer("Спасибо Вам за прохождение теста!" + '\n' + '\n'
                              + "По результатам профориентационного " + "тестирования, Вам подходят " +
-                             result[answers.index(max(answers))] + '\n' , reply_markup=keyboard)
+                             result[answers.index(max(answers))] + '\n' + 'Рекомендуем к рассмотрению'
+                            ' следующее направление подготовки: ' + '*' + predict_edu(answers) + '*', reply_markup=keyboard,
+                             parse_mode='Markdown')
 
 
 dp.register_message_handler(prof, lambda msg: msg.text == "Профориентация")
@@ -475,3 +460,4 @@ if __name__ == '__main__':
     executor.start_polling(dp)
 
 connection.close()
+f.close()
